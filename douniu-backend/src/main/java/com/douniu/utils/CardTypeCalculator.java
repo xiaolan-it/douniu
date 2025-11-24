@@ -56,11 +56,6 @@ public class CardTypeCalculator {
             return CardType.WU_HUA_NIU;
         }
 
-        // 检查四花牛（4张都是J、Q、K）
-        if (enabledTypes.contains("四花牛") && isSiHuaNiu(cards)) {
-            return CardType.SI_HUA_NIU;
-        }
-
         // 检查顺子牛（5张连续，且前3张能组成10的倍数）
         if (enabledTypes.contains("顺子") && isShunZiNiu(cards)) {
             return CardType.SHUN_ZI_NIU;
@@ -102,14 +97,6 @@ public class CardTypeCalculator {
      */
     private static boolean isWuHuaNiu(List<Card> cards) {
         return cards.stream().allMatch(c -> c.getRank() >= 11);
-    }
-
-    /**
-     * 判断是否四花牛（4张都是J、Q、K）
-     */
-    private static boolean isSiHuaNiu(List<Card> cards) {
-        long jqkCount = cards.stream().filter(c -> c.getRank() >= 11).count();
-        return jqkCount == 4;
     }
 
     /**
@@ -348,7 +335,6 @@ public class CardTypeCalculator {
             case WU_XIAO_NIU:
             case ZHA_DAN_NIU:
             case WU_HUA_NIU:
-            case SI_HUA_NIU:
             case SHUN_ZI_NIU:
             case NIU_NIU:
                 return 3; // 高级牌型

@@ -34,6 +34,10 @@
            <!-- 房间总积分（直接显示金额） -->
           ¥{{ player.totalScore }}
         </div>
+        <!-- 准备状态 -->
+        <div v-if="isReady" class="ready-badge">
+          已准备
+        </div>
       </div>
       
       
@@ -133,6 +137,10 @@ const props = defineProps({
   scoreChange: {
     type: Number,
     default: undefined
+  },
+  isReady: {
+    type: Boolean,
+    default: false
   },
   isDealer: {
     type: Boolean,

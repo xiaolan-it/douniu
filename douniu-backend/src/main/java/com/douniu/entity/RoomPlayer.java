@@ -31,5 +31,9 @@ public class RoomPlayer {
     // 非数据库字段，用于返回在线状态
     @TableField(exist = false)
     private Boolean isOnline; // true-在线，false-离线
+    
+    // 非数据库字段，用于返回准备状态
+    @TableField(exist = false)
+    private Boolean isReady; // true-已准备，false-未准备
 }
 

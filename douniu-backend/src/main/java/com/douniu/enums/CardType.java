@@ -10,7 +10,6 @@ public enum CardType {
     WU_XIAO_NIU("五小牛", 5),
     ZHA_DAN_NIU("炸弹牛", 4),
     WU_HUA_NIU("五花牛", 4),
-    SI_HUA_NIU("四花牛", 4),
     SHUN_ZI_NIU("顺子", 4),
     NIU_NIU("牛牛", 3),
     NIU_9("牛9", 2),

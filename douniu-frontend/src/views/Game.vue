@@ -8,34 +8,71 @@
     <!-- 顶部信息栏 -->
     <div class="relative z-20 pt-2 px-4">
       <div class="flex items-center justify-between mb-2">
-        <!-- 左上角：自动准备/其他功能 -->
-        <div class="flex items-center gap-2">
+        <!-- 左上角：准备按钮/自动准备/操作按钮 -->
+        <div class="flex items-center gap-2 relative">
+          <!-- 准备按钮 -->
+          <button
+            v-if="gamePhase === 'waiting' && !isCurrentUserReady"
+            @click="handleReady"
+            class="px-4 py-2 bg-green-500 text-white rounded text-sm hover:bg-green-600 whitespace-nowrap shadow-md"
+          >
+            准备
+          </button>
+          <span v-else-if="gamePhase === 'waiting' && isCurrentUserReady" class="px-4 py-2 bg-gray-400 text-white rounded text-sm whitespace-nowrap shadow-md">
+            已准备
+          </span>
           <label v-if="gamePhase === 'waiting'" class="flex items-center gap-1 text-white text-sm cursor-pointer">
-            <input type="checkbox" class="w-4 h-4" />
+            <input type="checkbox" v-model="autoReady" class="w-4 h-4" />
             <span>自动准备</span>
           </label>
-          <!-- 管理员功能按钮 -->
-          <button
-            v-if="isAdmin && !hasStarted"
-            @click="handleStartGame"
-            class="px-3 py-1.5 bg-green-500 text-white rounded text-xs hover:bg-green-600 whitespace-nowrap shadow-md"
-          >
-            开局
-          </button>
-          <button
-            v-if="isAdmin && gamePhase === 'waiting'"
-            @click="showDealerModal = true"
-            class="px-3 py-1.5 bg-yellow-500 text-white rounded text-xs hover:bg-yellow-600 whitespace-nowrap shadow-md"
-          >
-            指定庄家
-          </button>
-          <button
-            v-if="isAdmin"
-            @click="handleFinishGame"
-            class="px-3 py-1.5 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 whitespace-nowrap shadow-md"
-          >
-            提前结算
-          </button>
+          <!-- 管理员操作按钮（下拉菜单） -->
+          <div v-if="isAdmin" class="relative operation-menu-container">
+            <button
+              @click.stop="showOperationMenu = !showOperationMenu"
+              class="px-3 py-1.5 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 whitespace-nowrap shadow-md flex items-center gap-1"
+            >
+              操作
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            <!-- 下拉菜单 -->
+            <div
+              v-if="showOperationMenu"
+              class="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 min-w-[120px] z-50"
+              @click.stop
+            >
+              <!-- 开局 -->
+              <button
+                v-if="!hasStarted"
+                @click="handleStartGame(); showOperationMenu = false"
+                class="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-green-50 hover:text-green-600 transition-colors flex items-center gap-2"
+              >
+                <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                开局
+              </button>
+              
+              <!-- 指定庄家 -->
+              <button
+                v-if="gamePhase === 'waiting'"
+                @click="showDealerModal = true; showOperationMenu = false"
+                class="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-yellow-50 hover:text-yellow-600 transition-colors flex items-center gap-2"
+              >
+                <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
+                指定庄家
+              </button>
+              
+              <!-- 结束对局 -->
+              <button
+                @click="handleFinishGame(); showOperationMenu = false"
+                class="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors flex items-center gap-2"
+              >
+                <span class="w-2 h-2 rounded-full bg-orange-500"></span>
+                结束对局
+              </button>
+            </div>
+          </div>
         </div>
         
         <!-- 中间：局数显示 -->
@@ -46,18 +83,18 @@
             </p>
           </div>
           <!-- 底分显示 -->
-          <div class="bg-amber-800 rounded-full px-4 py-1 shadow-md">
+          <!-- <div class="bg-amber-800 rounded-full px-4 py-1 shadow-md">
             <p class="text-white text-xs font-semibold">底分:1分</p>
-          </div>
+          </div> -->
         </div>
         
         <!-- 右上角：复制链接按钮 -->
-        <button
+        <!-- <button
           @click="handleCopyLink"
           class="px-3 py-1.5 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 whitespace-nowrap shadow-md"
         >
           复制链接
-        </button>
+        </button> -->
       </div>
     </div>
 
@@ -193,18 +230,6 @@
       <div class="absolute inset-0 beauty-decoration pointer-events-none z-0">
         <img :src="beautyImage" alt="Beauty" class="beauty-image" />
       </div>
-      <!-- 金币动画容器 -->
-      <div class="coin-animation-container">
-        <div
-          v-for="(coin, index) in coinAnimations"
-          :key="index"
-          class="coin"
-          :style="coin.style"
-        >
-          💰
-        </div>
-      </div>
-      
       <!-- 玩家座位 -->
       <div
         v-for="player in players"
@@ -220,6 +245,7 @@
           :is-dealer="player.isDealer === 1"
           :bet-amount="gameBets[player.userId]"
           :seat-number="player.seatNumber"
+          :is-ready="player.isReady === true"
           :card-type="playerCardTypes[player.userId]?.cardType"
           :multiplier="playerCardTypes[player.userId]?.multiplier"
           :is-online="player.isOnline !== false"
@@ -229,19 +255,39 @@
         />
       </div>
 
-      <!-- 中心区域（发牌动画起点、结算倒计时） -->
+      <!-- 中心区域（发牌动画起点、倒计时、结算倒计时） -->
       <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10">
-        <div v-if="gamePhase === 'dealing'" class="text-white text-center">
+        <!-- 准备倒计时 -->
+        <div v-if="readyCountdown > 0" class="text-white text-center">
+          <div class="bg-black bg-opacity-50 rounded-full px-8 py-4 backdrop-blur-sm">
+            <p class="text-2xl font-bold text-yellow-300">{{ readyCountdown }}秒后开始</p>
+            <p class="text-sm text-gray-300 mt-1">已准备: {{ readyCount }}人</p>
+          </div>
+        </div>
+        <!-- 发牌中 -->
+        <div v-else-if="gamePhase === 'dealing'" class="text-white text-center">
           <div class="bg-black bg-opacity-30 rounded-full px-6 py-3 backdrop-blur-sm">
             <p class="text-xl font-bold text-yellow-300">发牌中...</p>
           </div>
         </div>
+        <!-- 开牌倒计时 -->
+        <div v-else-if="gamePhase === 'revealing' && revealCountdown > 0" class="text-white text-center">
+          <div class="bg-black bg-opacity-50 rounded-full px-8 py-4 backdrop-blur-sm">
+            <p class="text-2xl font-bold text-yellow-300">开牌倒计时: {{ revealCountdown }}秒</p>
+          </div>
+        </div>
+        <!-- 展示牌（8秒） -->
+        <div v-else-if="cardDisplayTime > 0" class="text-white text-center">
+          <div class="bg-black bg-opacity-50 rounded-full px-8 py-4 backdrop-blur-sm">
+            <p class="text-2xl font-bold text-yellow-300">{{ cardDisplayTime +nextRoundCountdown}}秒后开始下一局</p>
+          </div>
+        </div>
         <!-- 结算后倒计时（非最后一局） -->
-        <div v-if="gamePhase === 'settling' && !showFinalSettlement && room && room.currentRound < room.maxRounds" class="text-white text-center">
+        <!-- <div v-else-if="gamePhase === 'settling' && !showFinalSettlement && room && room.currentRound < room.maxRounds" class="text-white text-center">
           <div class="bg-black bg-opacity-50 rounded-full px-8 py-4 backdrop-blur-sm">
             <p class="text-2xl font-bold text-yellow-300">{{ nextRoundCountdown }}秒后开始下一局</p>
           </div>
-        </div>
+        </div> -->
       </div>
     </div>
 
@@ -271,10 +317,10 @@
       <!-- 结算结果弹框 -->
       <div class="relative bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl shadow-2xl border-2 border-amber-200 p-6 w-full max-w-md mx-4 z-10">
         <h3 class="text-2xl font-bold mb-4 text-center text-gray-800">最终结算结果</h3>
-        <!-- 玩家盈亏列表 -->
+        <!-- 玩家盈亏列表（按 totalScore 倒序排列） -->
         <div class="space-y-2 max-h-96 overflow-y-auto mb-4">
           <div
-            v-for="player in players"
+            v-for="player in sortedPlayersByScore"
             :key="player.userId"
             class="flex justify-between items-center p-3 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow"
           >
@@ -350,9 +396,17 @@ const hasStarted = ref(false) // 是否已经开始过游戏
 const showDealerModal = ref(false) // 显示指定庄家模态框
 const showCardTypesModal = ref(false) // 显示牌型及倍数模态框
 const showFinalSettlement = ref(false) // 是否显示最终结算弹框
+const showOperationMenu = ref(false) // 显示操作菜单
 const nextRoundCountdown = ref(3) // 下一局倒计时（秒）
 let nextRoundTimer = null // 下一局倒计时定时器
 const soundEnabled = ref(true) // 声音开关
+const autoReady = ref(false) // 自动准备
+const readyCountdown = ref(0) // 准备倒计时
+const readyCount = ref(0) // 已准备人数
+const revealCountdown = ref(0) // 开牌倒计时
+const cardDisplayTime = ref(0) // 展示牌时间
+let revealCountdownTimer = null // 开牌倒计时定时器
+let cardDisplayTimer = null // 展示牌定时器
 const gameBets = computed(() => {
   return gameStore.gameBets || {}
 })
@@ -360,8 +414,6 @@ const gameBets = computed(() => {
     const playerCardTypes = ref({})
     // 存储每个玩家的背面牌数量 { userId: backCount }
     const playerBackCounts = ref({})
-    // 金币动画
-    const coinAnimations = ref([])
     let countdownTimer = null
 
 // 翻倍牌型（可选牌型）
@@ -383,12 +435,6 @@ const specialCardTypes = [
     multiplier: 4,
     description: '5张都是J、Q、K',
     example: '例：JJQQK'
-  },
-  { 
-    name: '四花牛', 
-    multiplier: 4,
-    description: '4张都是J、Q、K',
-    example: '例：JJQKA'
   },
   { 
     name: '顺子', 
@@ -418,12 +464,33 @@ const isCurrentUserDealer = computed(() => {
   return currentPlayer && currentPlayer.isDealer === 1
 })
 
+// 判断当前用户是否已准备
+const isCurrentUserReady = computed(() => {
+  if (!players.value || !currentUserId.value) {
+    return false
+  }
+  const currentPlayer = players.value.find(p => p.userId === currentUserId.value)
+  return currentPlayer && currentPlayer.isReady === true
+})
+
 // 计算当前房间所有用户的总盈亏
 const totalRoomProfit = computed(() => {
   if (!players.value || players.value.length === 0) {
     return 0
   }
   return players.value.reduce((sum, player) => sum + (player.totalScore || 0), 0)
+})
+
+// 按 totalScore 倒序排列的玩家列表（用于最终结算显示）
+const sortedPlayersByScore = computed(() => {
+  if (!players.value || players.value.length === 0) {
+    return []
+  }
+  return [...players.value].sort((a, b) => {
+    const scoreA = a.totalScore || 0
+    const scoreB = b.totalScore || 0
+    return scoreB - scoreA // 倒序：从高到低
+  })
 })
 
 const getPlayerPosition = (seatNumber, userId) => {
@@ -516,60 +583,7 @@ const getPlayerNickname = (userId) => {
       return backCount
     }
 
-// 显示金币动画（从桌子中心向各玩家区域）
-const showCoinAnimations = (details) => {
-  coinAnimations.value = []
-  
-  // 桌子中心位置（相对于游戏桌）
-  const centerX = 50 // 百分比
-  const centerY = 50 // 百分比
-  
-  // 为每个玩家创建金币动画
-  for (const [userId, detail] of Object.entries(details)) {
-    if (detail.scoreChange === 0) continue
-    
-    const player = players.value.find(p => {
-      const pUserId = typeof p.userId === 'string' ? parseInt(p.userId) : p.userId
-      const uId = typeof userId === 'string' ? parseInt(userId) : userId
-      return pUserId === uId
-    })
-    
-    if (!player) continue
-    
-    // 获取玩家位置
-    const position = getPlayerPosition(player.seatNumber, player.userId)
-    
-    // 计算目标位置（玩家座位位置）
-    // 这里需要根据实际布局计算，简化处理
-    const targetX = position.left ? parseFloat(position.left) : 50
-    const targetY = position.top ? parseFloat(position.top) : 50
-    
-    // 创建金币动画
-    const coinCount = Math.min(Math.abs(detail.scoreChange) / 10, 5) // 最多5个金币
-    for (let i = 0; i < coinCount; i++) {
-      const delay = i * 100 // 每个金币延迟100ms
-      const offsetX = (Math.random() - 0.5) * 20 // 随机偏移
-      const offsetY = (Math.random() - 0.5) * 20
-      
-      coinAnimations.value.push({
-        style: {
-          left: `${centerX}%`,
-          top: `${centerY}%`,
-          '--target-x': `${targetX + offsetX}%`,
-          '--target-y': `${targetY + offsetY}%`,
-          '--delay': `${delay}ms`,
-          '--direction': detail.scoreChange > 0 ? '1' : '-1' // 正数向上，负数向下
-        }
-      })
-      
-      // 动画结束后移除
-      setTimeout(() => {
-        coinAnimations.value = coinAnimations.value.filter(c => c !== coinAnimations.value[coinAnimations.value.length - 1])
-      }, 1500 + delay)
-    }
-  }
-}
-
+// 启动发牌动画
 const handleStartGame = () => {
   // 只在第一局点击开始时播放游戏开始音效
   if (!hasStarted.value) {
@@ -662,7 +676,6 @@ const playCardTypeSound = (cardType) => {
     '牛牛': 'niu10.mp3',
     '顺子': 'niu11shunzi.mp3',
     '五花牛': 'niu12wuhuaniu.mp3',
-    '四花牛': 'niu12wuhuaniu.mp3', // 使用五花牛的声音
     '炸弹牛': 'niu13zhadan.mp3',
     '五小牛': 'niu13zhadan.mp3' // 如果没有专门的五小牛声音，使用炸弹牛
   }
@@ -698,6 +711,17 @@ const toggleSound = () => {
   soundEnabled.value = !soundEnabled.value
   // 这里可以添加实际的静音/取消静音逻辑
   console.log('声音开关:', soundEnabled.value)
+}
+
+// 准备
+const handleReady = () => {
+  if (!room.value || !currentUserId.value) {
+    return
+  }
+  sendMessage('/app/game/ready', {
+    roomId: room.value.id,
+    userId: currentUserId.value
+  })
 }
 
 const handleGoHome = () => {
@@ -746,11 +770,21 @@ const startCountdown = (seconds) => {
   }, 1000)
 }
 
+// 点击外部关闭操作菜单
+const handleClickOutside = (event) => {
+  if (showOperationMenu.value && !event.target.closest('.operation-menu-container')) {
+    showOperationMenu.value = false
+  }
+}
+
 onMounted(async () => {
   // 预加载牌桌图片以获取尺寸
   const img = new Image()
   img.onload = onDeskImageLoad
   img.src = deskImage
+  
+  // 添加点击外部关闭菜单的事件监听
+  document.addEventListener('click', handleClickOutside)
   
   // 连接WebSocket
   const token = userStore.token
@@ -760,6 +794,45 @@ onMounted(async () => {
       if (data.code === 200) {
         gameStore.setRoom(data.data.room)
         gameStore.setPlayers(data.data.players)
+        
+        // 如果自动准备开启且未准备，自动准备
+        if (autoReady.value && gamePhase.value === 'waiting' && !isCurrentUserReady.value) {
+          handleReady()
+        }
+      }
+    })
+    
+    // 订阅准备倒计时
+    subscribe(`/topic/room/${room.value?.id}/game/ready/countdown`, (data) => {
+      if (data.code === 200) {
+        readyCountdown.value = data.data.countdown || 0
+        readyCount.value = data.data.readyCount || 0
+      }
+    })
+    
+    // 订阅开牌倒计时
+    subscribe(`/topic/room/${room.value?.id}/game/reveal/countdown`, (data) => {
+      if (data.code === 200) {
+        revealCountdown.value = data.data.countdown || 0
+      }
+    })
+    
+    // 订阅展示牌
+    subscribe(`/topic/room/${room.value?.id}/game/card/display`, (data) => {
+      if (data.code === 200) {
+        cardDisplayTime.value = data.data.displayTime || 8
+        // 启动展示牌倒计时
+        if (cardDisplayTimer) {
+          clearInterval(cardDisplayTimer)
+        }
+        cardDisplayTimer = setInterval(() => {
+          if (cardDisplayTime.value > 0) {
+            cardDisplayTime.value--
+          } else {
+            clearInterval(cardDisplayTimer)
+            cardDisplayTimer = null
+          }
+        }, 1000)
       }
     })
 
@@ -782,9 +855,22 @@ onMounted(async () => {
         playerCardTypes.value = {} // 清空牌型信息
         gameStore.setGameCards({}) // 清空牌面
         playerBackCounts.value = {} // 清空背面牌数量
+        readyCountdown.value = 0 // 清除准备倒计时
+        revealCountdown.value = 0 // 清除开牌倒计时
+        cardDisplayTime.value = 0 // 清除展示牌时间
         // 展示下注选项时播放开始下注音效
         playSound('kaishixiazhu.mp3')
         startCountdown(15) // 15秒投注倒计时
+        
+        // 如果自动准备开启，自动准备下一局
+        if (autoReady.value) {
+          // 等待游戏状态更新后再准备
+          setTimeout(() => {
+            if (gamePhase.value === 'waiting') {
+              handleReady()
+            }
+          }, 1000)
+        }
       }
     })
 
@@ -917,7 +1003,6 @@ onMounted(async () => {
             gameStore.setGameCards(updatedCards)
             playerBackCounts.value = updatedBackCounts
             gameStore.setGamePhase('revealing')
-            startCountdown(10)
             playSound('fapai.mp3')
           }
         }
@@ -933,7 +1018,7 @@ onMounted(async () => {
         // 播放发牌声音
         playSound('fapai.mp3')
         gameStore.setGamePhase('revealing')
-        startCountdown(10) // 10秒开牌倒计时
+        // 开牌倒计时由后端控制
       }
     })
 
@@ -971,6 +1056,18 @@ onMounted(async () => {
 
             // 播放牌型对应的声音
             playCardTypeSound(cardType)
+            
+            // 检查是否所有玩家都开牌了，如果是则清除开牌倒计时
+            const allPlayers = players.value || []
+            const allRevealed = allPlayers.every(p => {
+              const pUid = typeof p.userId === 'string' ? parseInt(p.userId) : p.userId
+              return playerCardTypes.value[pUid]?.cardType
+            })
+            
+            if (allRevealed && allPlayers.length > 0) {
+              // 所有玩家都开牌了，清除开牌倒计时
+              revealCountdown.value = 0
+            }
           }
         })
 
@@ -1007,9 +1104,6 @@ onMounted(async () => {
             delete scoreChanges.value[userId]
           }, 3000)
         }
-        
-        // 显示金币动画（从桌子中心向各玩家区域）
-        showCoinAnimations(data.data.details)
         
         // 如果不是最后一局，显示倒计时并自动开始下一局
         if (!data.data.roomFinished) {
@@ -1085,12 +1179,17 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  // 移除事件监听
+  document.removeEventListener('click', handleClickOutside)
+  
   if (countdownTimer) {
     clearInterval(countdownTimer)
   }
   if (nextRoundTimer) {
     clearInterval(nextRoundTimer)
+    nextRoundTimer = null
   }
+  nextRoundCountdown.value = 0
   disconnectWebSocket()
 })
 </script>
@@ -1144,42 +1243,5 @@ onUnmounted(() => {
 }
 
 /* 金币动画 */
-.coin-animation-container {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 100;
-  overflow: hidden;
-}
-
-.coin {
-  position: absolute;
-  font-size: 24px;
-  animation: coinMove 1.5s ease-out forwards;
-  animation-delay: var(--delay, 0ms);
-  transform: translate(-50%, -50%);
-}
-
-@keyframes coinMove {
-  0% {
-    left: 50%;
-    top: 50%;
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1) rotate(0deg);
-  }
-  50% {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1.2) rotate(180deg);
-  }
-  100% {
-    left: var(--target-x, 50%);
-    top: var(--target-y, 50%);
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.8) rotate(360deg);
-  }
-}
 </style>
 

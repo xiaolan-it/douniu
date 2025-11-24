@@ -3,7 +3,7 @@
     <div class="max-w-4xl mx-auto">
       <!-- 顶部用户信息栏 -->
       <div class="bg-white rounded-lg shadow-lg p-4 mb-4">
-        <div class="flex justify-between items-center">
+        <div class="flex justify-between items-center mb-3">
           <!-- 用户信息 -->
           <div class="flex items-center gap-16">
             <div class="flex flex-col">
@@ -28,7 +28,21 @@
               退出
             </button>
           </div>
-          
+        </div>
+        
+        <!-- 游戏模式切换开关（单独一行） -->
+        <div class="flex items-center justify-center gap-2 pt-3 border-t border-gray-200">
+          <span class="text-sm text-gray-600">牌桌</span>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              v-model="useSimpleMode"
+              @change="saveGameMode"
+              class="sr-only peer"
+            />
+            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+          </label>
+          <span class="text-sm text-gray-600">列表模式</span>
         </div>
       </div>
 
@@ -230,9 +244,11 @@ const currentRoom = ref(null)
 const roomCodeInput = ref('')
 const availableRooms = ref([])
 const loadingRooms = ref(false)
+// 游戏模式：false=牌桌模式(game)，true=列表模式(gameSimple)
+const useSimpleMode = ref(localStorage.getItem('gameMode') === 'simple')
 const createForm = ref({
   maxRounds: 20,
-  enabledCardTypes: ['五小牛','炸弹牛','四花牛', '顺子', '五花牛'] 
+  enabledCardTypes: ['五小牛','炸弹牛', '顺子', '五花牛'] 
 })
 
 // 必选牌型（不在界面显示，后端会自动添加）
@@ -259,12 +275,6 @@ const cardTypes = [
     example: '例：JJQQK'
   },
   { 
-    name: '四花牛', 
-    multiplier: 4,
-    description: '4张都是J、Q、K',
-    example: '例：JJQKA'
-  },
-  { 
     name: '顺子', 
     multiplier: 4,
     description: '5张牌点数连续',
@@ -274,10 +284,25 @@ const cardTypes = [
 
 const roomUrl = computed(() => {
   if (currentRoom.value) {
-    return `${window.location.origin}/game/${currentRoom.value.roomCode}`
+    const gamePath = useSimpleMode.value ? 'game-simple' : 'game'
+    // 使用当前页面的基础路径
+    const basePath = window.location.pathname.includes('/room') 
+      ? window.location.pathname.replace('/room', '').replace(/\/$/, '') || '/douniu'
+      : '/douniu'
+    return `${window.location.origin}${basePath}/${gamePath}/${currentRoom.value.roomCode}`
   }
   return ''
 })
+
+// 获取游戏路由路径
+const getGameRoute = (roomCode) => {
+  return useSimpleMode.value ? `/game-simple/${roomCode}` : `/game/${roomCode}`
+}
+
+// 保存游戏模式到 localStorage
+const saveGameMode = () => {
+  localStorage.setItem('gameMode', useSimpleMode.value ? 'simple' : 'table')
+}
 
 const handleCreateRoom = async () => {
   try {
@@ -285,8 +310,8 @@ const handleCreateRoom = async () => {
     if (response.data.code === 200) {
       currentRoom.value = response.data.data
       showCreateModal.value = false
-      // 自动跳转到游戏页面
-      router.push(`/game/${currentRoom.value.roomCode}`)
+      // 自动跳转到游戏页面（根据模式选择）
+      router.push(getGameRoute(currentRoom.value.roomCode))
     }
   } catch (error) {
     alert(error.response?.data?.message || '创建房间失败')
@@ -303,8 +328,8 @@ const handleJoinRoom = async () => {
   try {
     const response = await api.get(`/room/code/${roomCodeInput.value}`)
     if (response.data.code === 200 && response.data.data) {
-      // 房间存在，跳转到游戏页面
-      router.push(`/game/${roomCodeInput.value}`)
+      // 房间存在，跳转到游戏页面（根据模式选择）
+      router.push(getGameRoute(roomCodeInput.value))
     } else {
       alert('房间不存在')
     }
@@ -319,7 +344,7 @@ const handleJoinRoom = async () => {
 
 const handleEnterGame = () => {
   if (currentRoom.value) {
-    router.push(`/game/${currentRoom.value.roomCode}`)
+    router.push(getGameRoute(currentRoom.value.roomCode))
   }
 }
 

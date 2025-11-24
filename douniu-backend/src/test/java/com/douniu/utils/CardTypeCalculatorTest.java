@@ -28,7 +28,7 @@ class CardTypeCalculatorTest {
      */
     private Set<String> getAllEnabledTypes() {
         return new HashSet<>(Arrays.asList(
-            "五小牛", "炸弹牛", "五花牛", "四花牛", "顺子"
+            "五小牛", "炸弹牛", "五花牛", "顺子"
         ));
     }
 
@@ -87,25 +87,6 @@ class CardTypeCalculatorTest {
         
         CardType result = CardTypeCalculator.calculateCardType(cards, enabledTypes);
         assertEquals(CardType.WU_HUA_NIU, result, "应该是五花牛");
-    }
-
-    @Test
-    @DisplayName("测试四花牛")
-    void testSiHuaNiu() {
-        Set<String> enabledTypes = getAllEnabledTypes();
-        
-        // 四花牛：4张都是J、Q、K
-        // 例：J J Q K A
-        List<CardTypeCalculator.Card> cards = Arrays.asList(
-            createCard(0, 11), // 黑桃J
-            createCard(1, 11), // 红桃J
-            createCard(0, 12), // 黑桃Q
-            createCard(1, 13), // 红桃K
-            createCard(0, 1)   // 黑桃A
-        );
-        
-        CardType result = CardTypeCalculator.calculateCardType(cards, enabledTypes);
-        assertEquals(CardType.SI_HUA_NIU, result, "应该是四花牛");
     }
 
     @Test

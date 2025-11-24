@@ -25,6 +25,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -37,6 +38,13 @@ public class WebSocketMessageHandler {
     private final GameService gameService;
     private final UserService userService;
     private final com.douniu.config.WebSocketEventListener webSocketEventListener;
+    
+    // 房间准备状态管理：roomId -> Set<userId>
+    private final Map<Long, Set<Long>> roomReadyPlayers = new ConcurrentHashMap<>();
+    // 开牌倒计时定时器：gameRecordId -> Timer
+    private final Map<Long, java.util.Timer> revealCountdownTimers = new ConcurrentHashMap<>();
+    // 开牌倒计时状态：gameRecordId -> Set<userId>（已开牌的玩家）
+    private final Map<Long, Set<Long>> revealedPlayers = new ConcurrentHashMap<>();
 
     /**
      * 从消息中获取用户ID的辅助方法
@@ -204,16 +212,120 @@ public class WebSocketMessageHandler {
     }
 
     /**
-     * 开始游戏
+     * 准备
      */
-    @MessageMapping("/game/start")
-    public void startGame(@Payload Map<String, Object> payload) {
+    @MessageMapping("/game/ready")
+    public void ready(@Payload Map<String, Object> payload) {
         Long userId = null;
         try {
             userId = getUserIdFromMessage(payload);
             Long roomId = Long.valueOf(payload.get("roomId").toString());
-
-            GameRecord record = gameService.startNewRound(roomId, userId);
+            
+            // 添加到准备列表
+            roomReadyPlayers.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(userId);
+            
+            // 获取房间玩家列表（带在线状态）
+            List<RoomPlayer> players = roomService.getRoomPlayers(roomId, webSocketEventListener::isUserOnline);
+            int readyCount = roomReadyPlayers.get(roomId).size();
+            
+            // 更新玩家准备状态并广播
+            broadcastRoomUpdate(roomId);
+            
+            // 检查是否可以开始游戏
+            // 至少2名在线玩家点击准备后，开始10秒倒计时
+            int onlinePlayerCount = (int) players.stream()
+                    .filter(p -> p.getIsOnline() != null && p.getIsOnline())
+                    .count();
+            
+            if (onlinePlayerCount >= 2 && readyCount >= 2) {
+                // 至少2名在线玩家准备，开始10秒倒计时
+                startReadyCountdown(roomId);
+            }
+            
+            sendSuccess(userId, "准备成功", null);
+        } catch (Exception e) {
+            log.error("准备失败", e);
+            if (userId != null) {
+                sendError(userId, e.getMessage());
+            }
+        }
+    }
+    
+    // 准备倒计时定时器：roomId -> Timer
+    private final Map<Long, java.util.Timer> roomReadyCountdownTimers = new ConcurrentHashMap<>();
+    
+    /**
+     * 开始准备倒计时（10秒）
+     */
+    private void startReadyCountdown(Long roomId) {
+        // 如果已经在倒计时，不重复启动
+        if (roomReadyCountdownTimers.containsKey(roomId)) {
+            return;
+        }
+        
+        // 广播开始倒计时
+        Map<String, Object> countdownData = new HashMap<>();
+        countdownData.put("countdown", 10);
+        countdownData.put("readyCount", roomReadyPlayers.getOrDefault(roomId, new HashSet<>()).size());
+        messagingTemplate.convertAndSend("/topic/room/" + roomId + "/game/ready/countdown",
+                ApiResponse.success(countdownData));
+        
+        // 启动倒计时
+        java.util.Timer timer = new java.util.Timer();
+        final int[] countdown = {10};
+        java.util.TimerTask task = new java.util.TimerTask() {
+            @Override
+            public void run() {
+                countdown[0]--;
+                if (countdown[0] > 0) {
+                    Map<String, Object> data = new HashMap<>();
+                    data.put("countdown", countdown[0]);
+                    data.put("readyCount", roomReadyPlayers.getOrDefault(roomId, new HashSet<>()).size());
+                    messagingTemplate.convertAndSend("/topic/room/" + roomId + "/game/ready/countdown",
+                            ApiResponse.success(data));
+                } else {
+                    // 倒计时结束，开始游戏
+                    timer.cancel();
+                    roomReadyCountdownTimers.remove(roomId);
+                    startGameInternal(roomId);
+                }
+            }
+        };
+        timer.scheduleAtFixedRate(task, 1000, 1000); // 每秒执行一次
+        roomReadyCountdownTimers.put(roomId, timer);
+    }
+    
+    /**
+     * 内部开始游戏方法（不检查准备状态）
+     */
+    private void startGameInternal(Long roomId) {
+        try {
+            // 清除准备状态和倒计时
+            roomReadyPlayers.remove(roomId);
+            if (roomReadyCountdownTimers.containsKey(roomId)) {
+                roomReadyCountdownTimers.get(roomId).cancel();
+                roomReadyCountdownTimers.remove(roomId);
+            }
+            
+            // 获取房间信息
+            Room room = roomService.getRoom(roomId);
+            if (room == null) {
+                return;
+            }
+            
+            // 获取庄家
+            List<RoomPlayer> players = roomService.getRoomPlayers(roomId);
+            RoomPlayer dealer = players.stream()
+                    .filter(p -> p.getIsDealer() == 1)
+                    .findFirst()
+                    .orElse(null);
+            
+            if (dealer == null) {
+                log.warn("房间 {} 没有庄家", roomId);
+                return;
+            }
+            
+            GameRecord record = gameService.startNewRound(roomId, dealer.getUserId());
 
             Map<String, Object> data = new HashMap<>();
             data.put("gameRecord", record);
@@ -224,6 +336,29 @@ public class WebSocketMessageHandler {
                     ApiResponse.success(data));
 
             broadcastRoomUpdate(roomId);
+        } catch (Exception e) {
+            log.error("开始游戏失败", e);
+        }
+    }
+
+    /**
+     * 开始游戏（管理员手动开始，不检查准备状态）
+     */
+    @MessageMapping("/game/start")
+    public void startGame(@Payload Map<String, Object> payload) {
+        Long userId = null;
+        try {
+            userId = getUserIdFromMessage(payload);
+            Long roomId = Long.valueOf(payload.get("roomId").toString());
+            
+            // 清除准备状态
+            roomReadyPlayers.remove(roomId);
+            if (roomReadyCountdownTimers.containsKey(roomId)) {
+                roomReadyCountdownTimers.get(roomId).cancel();
+                roomReadyCountdownTimers.remove(roomId);
+            }
+            
+            startGameInternal(roomId);
         } catch (Exception e) {
             log.error("开始游戏失败", e);
             if (userId != null) {
@@ -340,6 +475,9 @@ public class WebSocketMessageHandler {
                         // 广播发牌完成消息（通知所有玩家发牌阶段开始）
                         messagingTemplate.convertAndSend("/topic/room/" + roomId + "/game/deal", 
                                 ApiResponse.success(broadcastData));
+                        
+                        // 发牌后启动开牌倒计时（10秒）
+                        startRevealCountdown(gameRecordId, roomId);
                     } catch (Exception e) {
                         log.error("自动发牌失败", e);
                     }
@@ -400,8 +538,17 @@ public class WebSocketMessageHandler {
             userId = getUserIdFromMessage(payload);
             Long gameRecordId = Long.valueOf(payload.get("gameRecordId").toString());
 
+            // 检查是否已经开牌
+            Set<Long> revealed = revealedPlayers.getOrDefault(gameRecordId, new HashSet<>());
+            if (revealed.contains(userId)) {
+                sendError(userId, "已经开牌了");
+                return;
+            }
+
             // 记录开牌
             gameService.revealCard(gameRecordId, userId);
+            revealed.add(userId);
+            revealedPlayers.put(gameRecordId, revealed);
 
             GameRecord record = gameService.getGameRecord(gameRecordId);
             Long roomId = record.getRoomId();
@@ -428,35 +575,35 @@ public class WebSocketMessageHandler {
             revealData.put("cardType", cardType.getName()); // 牌型名称
             revealData.put("multiplier", cardType.getMultiplier()); // 赔率
             revealData.put("cardGroups", cardGroups); // 牌型分组（group1: 3张, group2: 2张）
+            revealData.put("autoRevealed", false); // 手动开牌
 
             // 广播给所有玩家（包括自己）
             messagingTemplate.convertAndSend("/topic/room/" + roomId + "/game/reveal",
                     ApiResponse.success(revealData));
 
-            // 检查是否所有玩家都开牌了，如果是则自动结算
-            if (gameService.areAllPlayersRevealed(gameRecordId)) {
-                // 延迟500ms结算，确保前端收到开牌消息
-                final Long finalRoomId = roomId; // 用于lambda表达式
-                new Thread(() -> {
-                    try {
-                        Thread.sleep(500);
-                        Map<Long, GameDetail> details = gameService.settleRound(gameRecordId);
-                        GameRecord settledRecord = gameService.getGameRecord(gameRecordId);
-                        Room settledRoom = roomService.getRoom(finalRoomId);
-
-                        Map<String, Object> settleData = new HashMap<>();
-                        settleData.put("details", details);
-                        settleData.put("gameRecord", settledRecord);
-                        settleData.put("roomFinished", settledRoom != null && settledRoom.getCurrentRound() >= settledRoom.getMaxRounds());
-
-                        messagingTemplate.convertAndSend("/topic/room/" + finalRoomId + "/game/settle",
-                                ApiResponse.success(settleData));
-
-                        broadcastRoomUpdate(finalRoomId);
-                    } catch (Exception e) {
-                        log.error("自动结算失败", e);
-                    }
-                }).start();
+            // 获取所有玩家（包括庄家）
+            List<RoomPlayer> players = roomService.getRoomPlayers(roomId);
+            Set<Long> allPlayerIds = players.stream()
+                    .map(RoomPlayer::getUserId)
+                    .collect(Collectors.toSet());
+            
+            // 检查是否所有玩家都开牌了
+            if (revealed.size() >= allPlayerIds.size()) {
+                // 取消倒计时定时器
+                if (revealCountdownTimers.containsKey(gameRecordId)) {
+                    revealCountdownTimers.get(gameRecordId).cancel();
+                    revealCountdownTimers.remove(gameRecordId);
+                }
+                
+                // 立即发送清除倒计时消息
+                Map<String, Object> clearCountdownData = new HashMap<>();
+                clearCountdownData.put("countdown", 0);
+                clearCountdownData.put("gameRecordId", gameRecordId);
+                messagingTemplate.convertAndSend("/topic/room/" + roomId + "/game/reveal/countdown",
+                        ApiResponse.success(clearCountdownData));
+                
+                // 所有玩家都开牌了，等待8秒展示牌，然后结算
+                startCardDisplayAndSettle(gameRecordId, roomId);
             }
         } catch (Exception e) {
             log.error("开牌失败", e);
@@ -527,6 +674,12 @@ public class WebSocketMessageHandler {
         Room room = roomService.getRoom(roomId);
         // 获取玩家列表，并填充在线状态
         List<RoomPlayer> players = roomService.getRoomPlayers(roomId, webSocketEventListener::isUserOnline);
+        
+        // 填充准备状态
+        Set<Long> readyPlayers = roomReadyPlayers.getOrDefault(roomId, new HashSet<>());
+        for (RoomPlayer player : players) {
+            player.setIsReady(readyPlayers.contains(player.getUserId()));
+        }
 
         Map<String, Object> data = new HashMap<>();
         data.put("room", room);
@@ -544,6 +697,167 @@ public class WebSocketMessageHandler {
     private void sendError(Long userId, String message) {
         messagingTemplate.convertAndSendToUser(userId.toString(), "/queue/message",
                 ApiResponse.error(message));
+    }
+    
+    /**
+     * 开始开牌倒计时（10秒）
+     */
+    private void startRevealCountdown(Long gameRecordId, Long roomId) {
+        // 如果已经在倒计时，不重复启动
+        if (revealCountdownTimers.containsKey(gameRecordId)) {
+            return;
+        }
+        
+        // 初始化已开牌玩家集合
+        revealedPlayers.put(gameRecordId, ConcurrentHashMap.newKeySet());
+        
+        // 获取所有玩家（包括庄家）
+        List<RoomPlayer> players = roomService.getRoomPlayers(roomId);
+        Set<Long> allPlayerIds = players.stream()
+                .map(RoomPlayer::getUserId)
+                .collect(Collectors.toSet());
+        
+        // 广播开始倒计时
+        Map<String, Object> countdownData = new HashMap<>();
+        countdownData.put("countdown", 10);
+        countdownData.put("gameRecordId", gameRecordId);
+        messagingTemplate.convertAndSend("/topic/room/" + roomId + "/game/reveal/countdown",
+                ApiResponse.success(countdownData));
+        
+        // 启动倒计时
+        java.util.Timer timer = new java.util.Timer();
+        final int[] countdown = {10};
+        final Long finalRoomId = roomId;
+        java.util.TimerTask task = new java.util.TimerTask() {
+            @Override
+            public void run() {
+                countdown[0]--;
+                if (countdown[0] > 0) {
+                    Map<String, Object> data = new HashMap<>();
+                    data.put("countdown", countdown[0]);
+                    data.put("gameRecordId", gameRecordId);
+                    messagingTemplate.convertAndSend("/topic/room/" + finalRoomId + "/game/reveal/countdown",
+                            ApiResponse.success(data));
+                } else {
+                    // 倒计时结束，自动开牌未开牌的玩家
+                    timer.cancel();
+                    revealCountdownTimers.remove(gameRecordId);
+                    autoRevealForUnrevealedPlayers(gameRecordId, finalRoomId, allPlayerIds);
+                }
+            }
+        };
+        timer.scheduleAtFixedRate(task, 1000, 1000); // 每秒执行一次
+        revealCountdownTimers.put(gameRecordId, timer);
+    }
+    
+    /**
+     * 自动开牌未开牌的玩家
+     */
+    private void autoRevealForUnrevealedPlayers(Long gameRecordId, Long roomId, Set<Long> allPlayerIds) {
+        Set<Long> revealed = revealedPlayers.getOrDefault(gameRecordId, new HashSet<>());
+        Set<Long> unrevealed = new HashSet<>(allPlayerIds);
+        unrevealed.removeAll(revealed);
+        
+        // 为每个未开牌的玩家自动开牌
+        for (Long userId : unrevealed) {
+            try {
+                // 调用开牌逻辑（但不发送消息，统一处理）
+                gameService.revealCard(gameRecordId, userId);
+                revealed.add(userId);
+                
+                // 获取房间信息以获取启用的牌型
+                Room room = roomService.getRoom(roomId);
+                List<String> enabledCardTypes = JSON.parseArray(room.getEnabledCardTypes(), String.class);
+                Set<String> enabledTypesSet = new HashSet<>(enabledCardTypes);
+                
+                // 获取该玩家的所有牌
+                Map<Long, List<CardTypeCalculator.Card>> cardsMap = gameService.getCurrentGameCards(gameRecordId);
+                List<CardTypeCalculator.Card> playerCards = cardsMap.get(userId);
+                
+                // 计算牌型
+                CardType cardType = CardTypeCalculator.calculateCardType(playerCards, enabledTypesSet);
+                
+                // 计算牌型分组
+                Map<String, List<CardTypeCalculator.Card>> cardGroups = CardTypeCalculator.getCardGroups(playerCards);
+                
+                // 构建开牌数据
+                Map<String, Object> revealData = new HashMap<>();
+                revealData.put("userId", userId);
+                revealData.put("cards", playerCards);
+                revealData.put("cardType", cardType.getName());
+                revealData.put("multiplier", cardType.getMultiplier());
+                revealData.put("cardGroups", cardGroups);
+                revealData.put("autoRevealed", true); // 标记为自动开牌
+                
+                // 广播开牌消息
+                messagingTemplate.convertAndSend("/topic/room/" + roomId + "/game/reveal",
+                        ApiResponse.success(revealData));
+            } catch (Exception e) {
+                log.error("自动开牌失败，玩家: {}", userId, e);
+            }
+        }
+        
+        // 更新已开牌状态
+        revealedPlayers.put(gameRecordId, revealed);
+        
+        // 检查是否所有玩家都开牌了
+        if (revealed.size() >= allPlayerIds.size()) {
+            // 取消倒计时定时器
+            if (revealCountdownTimers.containsKey(gameRecordId)) {
+                revealCountdownTimers.get(gameRecordId).cancel();
+                revealCountdownTimers.remove(gameRecordId);
+            }
+            
+            // 立即发送清除倒计时消息
+            Map<String, Object> clearCountdownData = new HashMap<>();
+            clearCountdownData.put("countdown", 0);
+            clearCountdownData.put("gameRecordId", gameRecordId);
+            messagingTemplate.convertAndSend("/topic/room/" + roomId + "/game/reveal/countdown",
+                    ApiResponse.success(clearCountdownData));
+            
+            // 所有玩家都开牌了，等待8秒展示牌，然后结算
+            startCardDisplayAndSettle(gameRecordId, roomId);
+        }
+    }
+    
+    /**
+     * 开始8秒展示牌，然后结算
+     */
+    private void startCardDisplayAndSettle(Long gameRecordId, Long roomId) {
+        // 广播开始展示牌（8秒）
+        Map<String, Object> displayData = new HashMap<>();
+        displayData.put("displayTime", 8);
+        displayData.put("gameRecordId", gameRecordId);
+        messagingTemplate.convertAndSend("/topic/room/" + roomId + "/game/card/display",
+                ApiResponse.success(displayData));
+        
+        // 8秒后结算
+        final Long finalRoomId = roomId;
+        new Thread(() -> {
+            try {
+                Thread.sleep(8000); // 8秒展示时间
+                
+                // 执行结算
+                Map<Long, GameDetail> details = gameService.settleRound(gameRecordId);
+                GameRecord settledRecord = gameService.getGameRecord(gameRecordId);
+                Room settledRoom = roomService.getRoom(finalRoomId);
+                
+                Map<String, Object> settleData = new HashMap<>();
+                settleData.put("details", details);
+                settleData.put("gameRecord", settledRecord);
+                settleData.put("roomFinished", settledRoom != null && settledRoom.getCurrentRound() >= settledRoom.getMaxRounds());
+                
+                messagingTemplate.convertAndSend("/topic/room/" + finalRoomId + "/game/settle",
+                        ApiResponse.success(settleData));
+                
+                broadcastRoomUpdate(finalRoomId);
+                
+                // 清除开牌状态
+                revealedPlayers.remove(gameRecordId);
+            } catch (Exception e) {
+                log.error("结算失败", e);
+            }
+        }).start();
     }
 }
 

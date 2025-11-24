@@ -24,6 +24,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/game-simple/:roomCode',
+    name: 'GameSimple',
+    component: () => import('@/views/GameSimple.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/records',
     name: 'Records',
     component: () => import('@/views/Records.vue'),
