@@ -1,5 +1,9 @@
 <template>
-  <div class="min-h-screen game-page-bg relative" :style="{ backgroundImage: `url(${deskImage})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }">
+  <div class="min-h-screen game-page-bg relative">
+    <!-- 顶部背景图 -->
+    <div class="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-blue-400 via-blue-300 to-transparent opacity-30">
+      <!-- 可以在这里添加城市天际线背景图 -->
+    </div>
     
     <!-- 顶部信息栏 -->
     <div class="relative z-20 pt-2 px-4">
@@ -39,6 +43,16 @@
               class="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-200 min-w-[120px] z-50"
               @click.stop
             >
+              <!-- 开局 -->
+              <button
+                v-if="!hasStarted"
+                @click="handleStartGame(); showOperationMenu = false"
+                class="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-green-50 hover:text-green-600 transition-colors flex items-center gap-2"
+              >
+                <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                开局
+              </button>
+              
               <!-- 指定庄家 -->
               <button
                 v-if="gamePhase === 'waiting'"
@@ -192,42 +206,57 @@
       </div>
     </div>
 
-    <!-- 游戏桌容器（铺满整个页面） -->
-    <div class="fixed inset-0 w-full h-full z-0">
+    <!-- 游戏桌 -->
+    <div 
+      class="relative game-table w-full mx-auto shadow-2xl" 
+      :style="deskLoaded ? { 
+        maxWidth: '95vw', 
+        aspectRatio: deskAspectRatio.value,
+        minHeight: 'calc(100vh - 280px)',
+        marginTop: '1rem',
+        marginBottom: '5rem'
+      } : { 
+        maxWidth: '95vw', 
+        aspectRatio: '1',
+        minHeight: 'calc(100vh - 280px)',
+        marginTop: '1rem',
+        marginBottom: '5rem'
+      }"
+    >
+      <!-- 牌桌背景 -->
+      <div class="absolute inset-0 game-table-bg rounded-full" :style="{ backgroundImage: `url(${deskImage})` }"></div>
+      
       <!-- 美女装饰图 -->
       <div class="absolute inset-0 beauty-decoration pointer-events-none z-0">
         <img :src="beautyImage" alt="Beauty" class="beauty-image" />
       </div>
-      
-      <!-- 玩家座位容器 -->
-      <div class="relative w-full h-full">
-        <!-- 玩家座位 -->
-        <div
-          v-for="player in players"
-          :key="player.userId"
-          class="absolute z-10"
-          :style="getPlayerPosition(player.seatNumber, player.userId)"
-        >
-          <PlayerSeat
-            :player="player"
-            :is-current-user="player.userId === currentUserId"
-            :cards="getPlayerCards(player.userId)"
-            :score-change="scoreChanges[player.userId]"
-            :is-dealer="player.isDealer === 1"
-            :bet-amount="gameBets[player.userId]"
-            :seat-number="player.seatNumber"
-            :is-ready="player.isReady === true"
-            :card-type="playerCardTypes[player.userId]?.cardType"
-            :multiplier="playerCardTypes[player.userId]?.multiplier"
-            :is-online="player.isOnline !== false"
-            :card-groups="playerCardTypes[player.userId]?.cardGroups"
-            :back-count="getBackCount(player.userId)"
-            @reveal="handleReveal"
-          />
-        </div>
+      <!-- 玩家座位 -->
+      <div
+        v-for="player in players"
+        :key="player.userId"
+        class="absolute z-10"
+        :style="getPlayerPosition(player.seatNumber, player.userId)"
+      >
+        <PlayerSeat
+          :player="player"
+          :is-current-user="player.userId === currentUserId"
+          :cards="getPlayerCards(player.userId)"
+          :score-change="scoreChanges[player.userId]"
+          :is-dealer="player.isDealer === 1"
+          :bet-amount="gameBets[player.userId]"
+          :seat-number="player.seatNumber"
+          :is-ready="player.isReady === true"
+          :card-type="playerCardTypes[player.userId]?.cardType"
+          :multiplier="playerCardTypes[player.userId]?.multiplier"
+          :is-online="player.isOnline !== false"
+          :card-groups="playerCardTypes[player.userId]?.cardGroups"
+          :back-count="getBackCount(player.userId)"
+          @reveal="handleReveal"
+        />
+      </div>
 
-        <!-- 中心区域（倒计时、结算倒计时） -->
-        <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10">
+      <!-- 中心区域（发牌动画起点、倒计时、结算倒计时） -->
+      <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10">
         <!-- 准备倒计时 -->
         <div v-if="readyCountdown > 0" class="text-white text-center">
           <div class="bg-black bg-opacity-50 rounded-full px-8 py-4 backdrop-blur-sm">
@@ -259,7 +288,6 @@
             <p class="text-2xl font-bold text-yellow-300">{{ nextRoundCountdown }}秒后开始下一局</p>
           </div>
         </div> -->
-        </div>
       </div>
     </div>
 
@@ -466,69 +494,46 @@ const sortedPlayersByScore = computed(() => {
 })
 
 const getPlayerPosition = (seatNumber, userId) => {
-  // 当前用户始终在底部中间
+  // 当前用户始终在底部
   if (userId === currentUserId.value) {
     return {
-      position: 'fixed',
-      bottom: '20px',
+      top: 'auto',
+      bottom: '-100px',
+      zIndex: 20,
       left: '50%',
-      transform: 'translateX(-50%)',
-      zIndex: 20
+      transform: 'translateX(-50%)'
     }
   }
   
-  // 其他玩家分布在左右和上方
+  // 其他玩家围绕圆形排列（排除当前用户）
   const otherPlayers = players.value.filter(p => p.userId !== currentUserId.value)
   const totalSeats = otherPlayers.length
   
   // 找到当前玩家在otherPlayers中的索引
-  const playerIndex = otherPlayers.findIndex(p => {
-    const pUserId = typeof p.userId === 'string' ? parseInt(p.userId) : p.userId
-    const uId = typeof userId === 'string' ? parseInt(userId) : userId
-    return pUserId === uId || p.seatNumber === seatNumber
-  })
-  
+  const playerIndex = otherPlayers.findIndex(p => p.seatNumber === seatNumber)
   if (playerIndex === -1) {
     // 如果找不到，使用seatNumber计算
-    return getPositionByIndex(seatNumber - 1, totalSeats)
+    const angle = (360 / totalSeats) * (seatNumber - 1) - 90
+    const radius = 200
+    const x = Math.cos((angle * Math.PI) / 180) * radius
+    const y = Math.sin((angle * Math.PI) / 180) * radius
+    return {
+      top: `calc(50% + ${y}px)`,
+      left: `calc(50% + ${x}px)`,
+      transform: 'translate(-50%, -50%)'
+    }
   }
   
-  return getPositionByIndex(playerIndex, totalSeats)
-}
+  // 计算角度（-90度让第一个座位在顶部，当前用户在底部，所以从顶部开始）
+  const angle = (360 / totalSeats) * playerIndex - 90
+  const radius = 200
+  const x = Math.cos((angle * Math.PI) / 180) * radius
+  const y = Math.sin((angle * Math.PI) / 180) * radius
 
-// 根据索引计算位置（分布在左右和上方）
-const getPositionByIndex = (index, total) => {
-  // 布局规则：
-  // - 顶部中间：index 0
-  // - 中间左侧：index 1
-  // - 中间右侧：index 2
-  // - 下方左侧：index 3
-  // - 下方右侧：index 4
-  // 如果超过5个玩家，继续按这个模式排列
-  
-  const positions = []
-  
-  // 顶部中间
-  positions.push({ top: '10%', left: '50%', transform: 'translateX(-50%)' })
-  
-  // 中间左侧
-  positions.push({ top: '35%', left: '10%', transform: 'translateX(-50%)' })
-  
-  // 中间右侧
-  positions.push({ top: '35%', right: '10%', transform: 'translateX(50%)' })
-  
-  // 下方左侧
-  positions.push({ top: '60%', left: '15%', transform: 'translateX(-50%)' })
-  
-  // 下方右侧
-  positions.push({ top: '60%', right: '15%', transform: 'translateX(50%)' })
-  
-  // 如果超过5个，继续循环
-  const positionIndex = index % positions.length
   return {
-    position: 'fixed',
-    ...positions[positionIndex],
-    zIndex: 10
+    top: `calc(50% + ${y}px)`,
+    left: `calc(50% + ${x}px)`,
+    transform: 'translate(-50%, -50%)'
   }
 }
 
@@ -1116,14 +1121,13 @@ onMounted(async () => {
               nextRoundTimer = null
               nextRoundCountdown.value = 0
               
-              // 开始下一局（不需要手动开始，等待玩家准备即可）
-              // 重置状态，等待玩家准备
+              // 开始下一局
               if (room.value && room.value.currentRound < room.value.maxRounds && room.value.status !== 2) {
                 hasBet.value = false // 重置投注状态
                 playerCardTypes.value = {} // 清空牌型信息
                 gameStore.setGameCards({}) // 清空牌面
                 playerBackCounts.value = {} // 清空背面牌数量
-                gameStore.setGamePhase('waiting') // 设置为等待状态，等待玩家准备
+                handleStartGame()
               }
             }
           }, 1000)

@@ -265,6 +265,7 @@ public class CardTypeCalculator {
     /**
      * 比较两副牌的大小（当牌型相同时使用）
      * 规则：比较最大的一张牌，先比点数，点数相同再比花色（黑桃>红桃>梅花>方块）
+     * 如果最大牌的点数相同，则按最大牌的花色比较大小
      * @param cards1 牌1（玩家）
      * @param cards2 牌2（庄家）
      * @return 正数表示cards2（庄家）大，负数表示cards1（玩家）大，0表示相等

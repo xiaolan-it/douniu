@@ -221,25 +221,80 @@ public class WebSocketMessageHandler {
             userId = getUserIdFromMessage(payload);
             Long roomId = Long.valueOf(payload.get("roomId").toString());
             
+            log.info("收到准备请求 - 房间ID: {}, 用户ID: {}", roomId, userId);
+            
             // 添加到准备列表
             roomReadyPlayers.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(userId);
             
             // 获取房间玩家列表（带在线状态）
             List<RoomPlayer> players = roomService.getRoomPlayers(roomId, webSocketEventListener::isUserOnline);
-            int readyCount = roomReadyPlayers.get(roomId).size();
+            Set<Long> readySet = roomReadyPlayers.getOrDefault(roomId, new HashSet<>());
+            int readyCount = readySet.size();
+            
+            log.info("准备状态更新 - 房间ID: {}, 用户ID: {}, 已准备数: {}, 已准备玩家: {}", 
+                roomId, userId, readyCount, readySet);
             
             // 更新玩家准备状态并广播
             broadcastRoomUpdate(roomId);
             
-            // 检查是否可以开始游戏
-            // 至少2名在线玩家点击准备后，开始10秒倒计时
-            int onlinePlayerCount = (int) players.stream()
+            // 获取在线玩家列表
+            List<RoomPlayer> onlinePlayers = players.stream()
                     .filter(p -> p.getIsOnline() != null && p.getIsOnline())
-                    .count();
+                    .collect(java.util.stream.Collectors.toList());
+            int onlinePlayerCount = onlinePlayers.size();
+            
+            // 检查是否可以开始游戏
+            log.info("准备检查 - 房间ID: {}, 在线玩家数: {}, 已准备数: {}", roomId, onlinePlayerCount, readyCount);
             
             if (onlinePlayerCount >= 2 && readyCount >= 2) {
-                // 至少2名在线玩家准备，开始10秒倒计时
-                startReadyCountdown(roomId);
+                // 检查是否所有在线玩家都准备了
+                boolean allReady = onlinePlayers.stream()
+                        .allMatch(p -> readySet.contains(p.getUserId()));
+                
+                log.info("准备检查 - 所有在线玩家都准备: {}, 在线玩家ID: {}, 已准备ID: {}", 
+                    allReady, 
+                    onlinePlayers.stream().map(p -> p.getUserId()).collect(java.util.stream.Collectors.toList()),
+                    readySet);
+                
+                if (allReady) {
+                    // 所有在线玩家都准备了，立即开始游戏（不等待倒计时）
+                    log.info("所有在线玩家都准备了，立即开始游戏 - 房间ID: {}", roomId);
+                    if (roomReadyCountdownTimers.containsKey(roomId)) {
+                        roomReadyCountdownTimers.get(roomId).cancel();
+                        roomReadyCountdownTimers.remove(roomId);
+                    }
+                    startGameInternal(roomId);
+                } else if (onlinePlayerCount > 2) {
+                    // 大于2个人，只要有2个人准备了就开始倒计时
+                    log.info("大于2个人，开始倒计时 - 房间ID: {}", roomId);
+                    if (!roomReadyCountdownTimers.containsKey(roomId)) {
+                        startReadyCountdown(roomId);
+                    }
+                } else {
+                    // 只有2个人，都准备了就立即开始
+                    log.info("只有2个人，检查是否都准备了 - 房间ID: {}, 已准备数: {}, 在线玩家数: {}", 
+                        roomId, readyCount, onlinePlayerCount);
+                    if (readyCount >= 2 && onlinePlayerCount == 2) {
+                        // 确保2个在线玩家都准备了
+                        boolean bothReady = onlinePlayers.stream()
+                                .allMatch(p -> readySet.contains(p.getUserId()));
+                        log.info("2人检查结果 - 房间ID: {}, 都准备了: {}, 在线玩家ID: {}, 已准备ID: {}", 
+                            roomId, bothReady,
+                            onlinePlayers.stream().map(p -> p.getUserId()).collect(java.util.stream.Collectors.toList()),
+                            readySet);
+                        if (bothReady) {
+                            log.info("2人都准备了，立即开始游戏 - 房间ID: {}", roomId);
+                            startGameInternal(roomId);
+                        } else {
+                            log.warn("2人未都准备 - 房间ID: {}, 在线玩家ID: {}, 已准备ID: {}", 
+                                roomId,
+                                onlinePlayers.stream().map(p -> p.getUserId()).collect(java.util.stream.Collectors.toList()),
+                                readySet);
+                        }
+                    }
+                }
+            } else {
+                log.info("准备检查 - 条件不满足: 在线玩家数={}, 已准备数={}", onlinePlayerCount, readyCount);
             }
             
             sendSuccess(userId, "准备成功", null);
@@ -296,10 +351,19 @@ public class WebSocketMessageHandler {
     }
     
     /**
-     * 内部开始游戏方法（不检查准备状态）
+     * 内部开始游戏方法（只让已准备的玩家参与）
      */
     private void startGameInternal(Long roomId) {
         try {
+            log.info("开始游戏 - 房间ID: {}", roomId);
+            // 获取已准备的玩家列表
+            Set<Long> readySet = roomReadyPlayers.getOrDefault(roomId, new HashSet<>());
+            log.info("已准备的玩家列表: {}", readySet);
+            if (readySet.isEmpty()) {
+                log.warn("房间 {} 没有已准备的玩家", roomId);
+                return;
+            }
+            
             // 清除准备状态和倒计时
             roomReadyPlayers.remove(roomId);
             if (roomReadyCountdownTimers.containsKey(roomId)) {
@@ -313,19 +377,29 @@ public class WebSocketMessageHandler {
                 return;
             }
             
-            // 获取庄家
-            List<RoomPlayer> players = roomService.getRoomPlayers(roomId);
-            RoomPlayer dealer = players.stream()
-                    .filter(p -> p.getIsDealer() == 1)
-                    .findFirst()
-                    .orElse(null);
+            // 获取所有玩家
+            List<RoomPlayer> allPlayers = roomService.getRoomPlayers(roomId);
             
-            if (dealer == null) {
-                log.warn("房间 {} 没有庄家", roomId);
+            // 只保留已准备的玩家
+            List<RoomPlayer> readyPlayers = allPlayers.stream()
+                    .filter(p -> readySet.contains(p.getUserId()))
+                    .collect(java.util.stream.Collectors.toList());
+            
+            if (readyPlayers.size() < 2) {
+                log.warn("房间 {} 已准备的玩家少于2人", roomId);
                 return;
             }
             
-            GameRecord record = gameService.startNewRound(roomId, dealer.getUserId());
+            // 获取庄家（必须是已准备的玩家）
+            RoomPlayer dealer = readyPlayers.stream()
+                    .filter(p -> p.getIsDealer() == 1)
+                    .findFirst()
+                    .orElse(readyPlayers.get(0));
+            
+            // 保存已准备的玩家列表到当前对局
+            currentRoundReadyPlayers.put(roomId, readySet);
+            
+            GameRecord record = gameService.startNewRound(roomId, dealer.getUserId(), readySet);
 
             Map<String, Object> data = new HashMap<>();
             data.put("gameRecord", record);
@@ -340,6 +414,9 @@ public class WebSocketMessageHandler {
             log.error("开始游戏失败", e);
         }
     }
+    
+    // 存储当前对局已准备的玩家：roomId -> Set<userId>
+    private final Map<Long, Set<Long>> currentRoundReadyPlayers = new ConcurrentHashMap<>();
 
     /**
      * 开始游戏（管理员手动开始，不检查准备状态）

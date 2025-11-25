@@ -40,12 +40,16 @@ public class GameService {
     private final Map<Long, Map<Long, Integer>> currentGameBets = new HashMap<>();
     // 存储当前对局的开牌状态（key: gameRecordId, value: Set<userId>）
     private final Map<Long, java.util.Set<Long>> currentGameRevealed = new HashMap<>();
+    // 存储当前对局的已准备玩家（key: roomId, value: Set<userId>）
+    private final Map<Long, Set<Long>> currentRoundReadyPlayers = new HashMap<>();
 
     /**
      * 开始新一局游戏
+     * @param readyPlayerIds 已准备的玩家ID集合（如果为null，则使用所有玩家）
      */
     @Transactional
-    public GameRecord startNewRound(Long roomId, Long adminId) {
+    public GameRecord startNewRound(Long roomId, Long adminId, Set<Long> readyPlayerIds) {
+        // 使用悲观锁锁定房间记录，避免并发问题
         Room room = roomMapper.selectById(roomId);
         if (room == null) {
             throw new RuntimeException("房间不存在");
@@ -55,21 +59,40 @@ public class GameService {
             throw new RuntimeException("无权限");
         }
 
+        // 重新查询房间，确保获取最新的 currentRound
+        room = roomMapper.selectById(roomId);
+        
         if (room.getCurrentRound() >= room.getMaxRounds()) {
             throw new RuntimeException("已达到最大局数");
         }
 
         // 获取房间内所有玩家
-        List<RoomPlayer> players = getRoomPlayers(roomId);
+        List<RoomPlayer> allPlayers = getRoomPlayers(roomId);
+        
+        // 如果指定了已准备的玩家，只使用已准备的玩家
+        List<RoomPlayer> players;
+        if (readyPlayerIds != null && !readyPlayerIds.isEmpty()) {
+            players = allPlayers.stream()
+                    .filter(p -> readyPlayerIds.contains(p.getUserId()))
+                    .collect(java.util.stream.Collectors.toList());
+        } else {
+            players = allPlayers;
+        }
+        
         if (players.size() < 2) {
             throw new RuntimeException("至少需要2名玩家");
         }
 
-        // 确定庄家（如果设置了自动轮换，则轮换；否则使用指定的庄家）
+        // 确定庄家（必须是已准备的玩家，如果设置了自动轮换，则轮换；否则使用指定的庄家）
         RoomPlayer dealer = players.stream()
                 .filter(p -> p.getIsDealer() == 1)
                 .findFirst()
                 .orElse(players.get(0));
+        
+        // 保存当前对局的已准备玩家列表
+        if (readyPlayerIds != null) {
+            currentRoundReadyPlayers.put(roomId, readyPlayerIds);
+        }
 
         // 只在第一局开始时重置所有玩家的房间积分为0
         // 之后每局累加/减，直到房间结束
@@ -82,18 +105,19 @@ public class GameService {
             }
         }
 
-        // 创建对局记录
-        room.setCurrentRound(nextRound);
-        room.setStatus(GameStatus.GAMING.getCode());
-        roomMapper.updateById(room);
-
+        // 创建对局记录（先创建记录，再更新房间状态）
         GameRecord record = new GameRecord();
         record.setRoomId(roomId);
-        record.setRoundNumber(room.getCurrentRound());
+        record.setRoundNumber(nextRound); // 使用计算出的 nextRound，而不是 room.getCurrentRound()
         record.setDealerId(dealer.getUserId());
         record.setStatus(RoundStatus.IN_PROGRESS.getCode());
         record.setStartTime(LocalDateTime.now());
         gameRecordMapper.insert(record);
+
+        // 更新房间状态
+        room.setCurrentRound(nextRound);
+        room.setStatus(GameStatus.GAMING.getCode());
+        roomMapper.updateById(room);
 
         return record;
     }
@@ -130,7 +154,7 @@ public class GameService {
     }
 
     /**
-     * 发牌
+     * 发牌（只给已准备的玩家发牌）
      */
     @Transactional
     public Map<Long, List<CardTypeCalculator.Card>> dealCards(Long gameRecordId) {
@@ -139,7 +163,19 @@ public class GameService {
             throw new RuntimeException("对局不存在");
         }
 
-        List<RoomPlayer> players = getRoomPlayers(record.getRoomId());
+        // 获取已准备的玩家列表
+        Set<Long> readyPlayerIds = currentRoundReadyPlayers.get(record.getRoomId());
+        List<RoomPlayer> allPlayers = getRoomPlayers(record.getRoomId());
+        
+        // 只给已准备的玩家发牌
+        List<RoomPlayer> players;
+        if (readyPlayerIds != null && !readyPlayerIds.isEmpty()) {
+            players = allPlayers.stream()
+                    .filter(p -> readyPlayerIds.contains(p.getUserId()))
+                    .collect(java.util.stream.Collectors.toList());
+        } else {
+            players = allPlayers;
+        }
         
         // 生成并洗牌
         List<CardTypeCalculator.Card> deck = CardTypeCalculator.generateDeck();
@@ -175,7 +211,20 @@ public class GameService {
         List<String> enabledCardTypes = JSON.parseArray(room.getEnabledCardTypes(), String.class);
         Set<String> enabledTypesSet = new HashSet<>(enabledCardTypes);
 
-        List<RoomPlayer> players = getRoomPlayers(record.getRoomId());
+        // 获取已准备的玩家列表（只结算已准备的玩家）
+        Set<Long> readyPlayerIds = currentRoundReadyPlayers.get(record.getRoomId());
+        List<RoomPlayer> allPlayers = getRoomPlayers(record.getRoomId());
+        
+        // 只结算已准备的玩家
+        List<RoomPlayer> players;
+        if (readyPlayerIds != null && !readyPlayerIds.isEmpty()) {
+            players = allPlayers.stream()
+                    .filter(p -> readyPlayerIds.contains(p.getUserId()))
+                    .collect(java.util.stream.Collectors.toList());
+        } else {
+            players = allPlayers;
+        }
+        
         RoomPlayer dealer = players.stream()
                 .filter(p -> p.getUserId().equals(record.getDealerId()))
                 .findFirst()
@@ -314,6 +363,7 @@ public class GameService {
         currentGameCards.remove(gameRecordId);
         currentGameBets.remove(gameRecordId);
         currentGameRevealed.remove(gameRecordId);
+        currentRoundReadyPlayers.remove(record.getRoomId());
 
         return details;
     }
