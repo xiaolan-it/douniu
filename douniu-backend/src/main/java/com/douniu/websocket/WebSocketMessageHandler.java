@@ -331,11 +331,30 @@ public class WebSocketMessageHandler {
         java.util.TimerTask task = new java.util.TimerTask() {
             @Override
             public void run() {
+                // 检查是否所有在线玩家都准备了
+                List<RoomPlayer> players = roomService.getRoomPlayers(roomId, webSocketEventListener::isUserOnline);
+                List<RoomPlayer> onlinePlayers = players.stream()
+                        .filter(p -> p.getIsOnline() != null && p.getIsOnline())
+                        .collect(java.util.stream.Collectors.toList());
+                Set<Long> readySet = roomReadyPlayers.getOrDefault(roomId, new HashSet<>());
+                
+                // 如果所有在线玩家都准备了，立即开始游戏
+                boolean allReady = onlinePlayers.size() >= 2 && 
+                        onlinePlayers.stream().allMatch(p -> readySet.contains(p.getUserId()));
+                
+                if (allReady) {
+                    log.info("倒计时过程中所有玩家都准备了，立即开始游戏 - 房间ID: {}", roomId);
+                    timer.cancel();
+                    roomReadyCountdownTimers.remove(roomId);
+                    startGameInternal(roomId);
+                    return;
+                }
+                
                 countdown[0]--;
                 if (countdown[0] > 0) {
                     Map<String, Object> data = new HashMap<>();
                     data.put("countdown", countdown[0]);
-                    data.put("readyCount", roomReadyPlayers.getOrDefault(roomId, new HashSet<>()).size());
+                    data.put("readyCount", readySet.size());
                     messagingTemplate.convertAndSend("/topic/room/" + roomId + "/game/ready/countdown",
                             ApiResponse.success(data));
                 } else {

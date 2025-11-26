@@ -18,7 +18,12 @@
             已准备
           </span>
           <label v-if="gamePhase === 'waiting'" class="flex items-center gap-1 text-white text-sm cursor-pointer">
-            <input type="checkbox" v-model="autoReady" class="w-4 h-4" />
+            <input 
+              type="checkbox" 
+              v-model="autoReady" 
+              class="w-4 h-4" 
+              @change="handleAutoReadyChange"
+            />
             <span>自动准备</span>
           </label>
           <!-- 管理员操作按钮（下拉菜单） -->
@@ -392,25 +397,25 @@ const gameBets = computed(() => {
 const specialCardTypes = [
   { 
     name: '五小牛', 
-    multiplier: 5,
+    multiplier: 6,
     description: '5张牌都小于5，且总和≤10',
     example: '例：AA223'
   },
   { 
     name: '炸弹牛', 
-    multiplier: 4,
+    multiplier: 5,
     description: '4张相同点数的牌',
     example: '例：AAAAK'
   },
   { 
     name: '五花牛', 
-    multiplier: 4,
+    multiplier: 5,
     description: '5张都是J、Q、K',
     example: '例：JJQQK'
   },
   { 
     name: '顺子', 
-    multiplier: 4,
+    multiplier: 5,
     description: '5张牌点数连续',
     example: '例：A2345'
   }
@@ -418,8 +423,8 @@ const specialCardTypes = [
 
 // 普通牌型（必选牌型）
 const normalCardTypes = [
-  { name: '牛牛', multiplier: 3 },
-  { name: '牛9', multiplier: 2 },
+  { name: '牛牛', multiplier: 4 },
+  { name: '牛9', multiplier: 3 },
   { name: '牛8', multiplier: 2 }
 ]
 
@@ -719,6 +724,14 @@ const handleReady = () => {
   })
 }
 
+// 自动准备变化时立即准备
+const handleAutoReadyChange = () => {
+  if (autoReady.value && gamePhase.value === 'waiting' && !isCurrentUserReady.value) {
+    // 立即提交准备操作
+    handleReady()
+  }
+}
+
 const handleGoHome = () => {
   // 关闭结算弹框
   showFinalSettlement.value = false
@@ -790,9 +803,14 @@ onMounted(async () => {
         gameStore.setRoom(data.data.room)
         gameStore.setPlayers(data.data.players)
         
-        // 如果自动准备开启且未准备，自动准备
+        // 如果自动准备开启且未准备，自动准备（延迟执行，避免在房间更新时立即触发）
         if (autoReady.value && gamePhase.value === 'waiting' && !isCurrentUserReady.value) {
-          handleReady()
+          // 延迟执行，避免在房间更新广播时所有玩家同时自动准备
+          setTimeout(() => {
+            if (autoReady.value && gamePhase.value === 'waiting' && !isCurrentUserReady.value) {
+              handleReady()
+            }
+          }, 300)
         }
       }
     })

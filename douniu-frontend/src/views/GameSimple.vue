@@ -235,7 +235,7 @@
     <!-- 底部：准备按钮和投注面板 -->
     <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-40">
       <!-- 准备按钮 -->
-      <div v-if="gamePhase === 'waiting'" class="flex justify-center mb-4">
+      <div v-if="gamePhase === 'waiting'" class="flex flex-col items-center gap-2 mb-4">
         <button
           v-if="!isCurrentUserReady"
           @click="handleReady"
@@ -246,6 +246,15 @@
         <span v-else class="px-8 py-3 bg-gray-400 text-white rounded-lg text-base font-semibold">
           已准备
         </span>
+        <label class="flex items-center gap-1 text-gray-600 text-sm cursor-pointer">
+          <input 
+            type="checkbox" 
+            v-model="autoReady" 
+            class="w-4 h-4" 
+            @change="handleAutoReadyChange"
+          />
+          <span>自动准备</span>
+        </label>
       </div>
 
       <!-- 投注面板（只有非庄家玩家才显示） -->
@@ -466,8 +475,8 @@ const specialCardTypes = [
 
 // 普通牌型（必选牌型）
 const normalCardTypes = [
-  { name: '牛牛', multiplier: 3 },
-  { name: '牛9', multiplier: 2 },
+  { name: '牛牛', multiplier: 4 },
+  { name: '牛9', multiplier: 3 },
   { name: '牛8', multiplier: 2 }
 ]
 
@@ -597,6 +606,14 @@ const handleReady = () => {
   })
 }
 
+// 自动准备变化时立即准备
+const handleAutoReadyChange = () => {
+  if (autoReady.value && gamePhase.value === 'waiting' && !isCurrentUserReady.value) {
+    // 立即提交准备操作
+    handleReady()
+  }
+}
+
 const handleGoHome = () => {
   showFinalSettlement.value = false
   disconnectWebSocket()
@@ -687,6 +704,16 @@ onMounted(async () => {
       if (data.code === 200) {
         gameStore.setRoom(data.data.room)
         gameStore.setPlayers(data.data.players)
+        
+        // 如果自动准备开启且未准备，自动准备（延迟执行，避免在房间更新时立即触发）
+        if (autoReady.value && gamePhase.value === 'waiting' && !isCurrentUserReady.value) {
+          // 延迟执行，避免在房间更新广播时所有玩家同时自动准备
+          setTimeout(() => {
+            if (autoReady.value && gamePhase.value === 'waiting' && !isCurrentUserReady.value) {
+              handleReady()
+            }
+          }, 300)
+        }
       }
     })
     
@@ -940,6 +967,16 @@ onMounted(async () => {
                 gameStore.setGameCards({})
                 playerBackCounts.value = {}
                 handleStartGame()
+                
+                // 如果自动准备开启，自动准备下一局
+                if (autoReady.value) {
+                  // 等待游戏状态更新后再准备
+                  setTimeout(() => {
+                    if (gamePhase.value === 'waiting') {
+                      handleReady()
+                    }
+                  }, 1000)
+                }
               }
             }
           }, 1000)

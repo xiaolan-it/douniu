@@ -68,9 +68,19 @@ const cardStyle = computed(() => {
   // 计算牌的位置
   // 每张牌大小：65x75
   // 列：rank - 1 (A=1, 2=2, ..., K=13)
-  // 行：suit (0=黑桃, 1=红桃, 2=方块, 3=梅花)
+  // 行：suit (0=黑桃, 1=红桃, 2=梅花, 3=方块)
+  // 注意：Cards.png 图片中的排列是：0=黑桃, 1=红桃, 2=方块, 3=梅花
+  // 所以需要将新的 suit 值映射到图片中的行号
   const x = -(props.rank - 1) * 65
-  const y = -props.suit * 75
+  // 映射：0(黑桃)->0, 1(红桃)->1, 2(梅花)->3, 3(方块)->2
+  const suitToImageRow = {
+    0: 0, // 黑桃 -> 行0
+    1: 1, // 红桃 -> 行1
+    2: 3, // 梅花 -> 行3
+    3: 2  // 方块 -> 行2
+  }
+  const imageRow = suitToImageRow[props.suit] ?? props.suit
+  const y = -imageRow * 75
 
   return {
     ...baseStyle,

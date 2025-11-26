@@ -13,7 +13,7 @@ public class CardTypeCalculator {
 
     @Data
     public static class Card {
-        private int suit; // 花色：0-黑桃，1-红桃，2-方块，3-梅花（大小：黑桃>红桃>梅花>方块）
+        private int suit; // 花色：0-黑桃，1-红桃，2-梅花，3-方块（大小：黑桃>红桃>梅花>方块）
         private int rank; // 点数：1-A, 2-2, ..., 10-10, 11-J, 12-Q, 13-K
 
         public Card(int suit, int rank) {
@@ -278,31 +278,37 @@ public class CardTypeCalculator {
         // 先比较点数（rank）
         if (maxCard1.getRank() != maxCard2.getRank()) {
             // 点数大的更大，返回：正数表示庄家大，负数表示玩家大
-            return maxCard2.getRank() - maxCard1.getRank();
+            int rankCompare = maxCard2.getRank() - maxCard1.getRank();
+            System.out.println(String.format("比较牌 - 点数不同: 玩家最大牌(rank=%d, suit=%d) vs 庄家最大牌(rank=%d, suit=%d), 结果=%d", 
+                maxCard1.getRank(), maxCard1.getSuit(), maxCard2.getRank(), maxCard2.getSuit(), rankCompare));
+            return rankCompare;
         }
 
-        // 点数相同，比较花色（大小：黑桃(0) > 红桃(1) > 梅花(3) > 方块(2)）
-        // 花色大小映射：0-黑桃(最大), 1-红桃, 3-梅花, 2-方块(最小)
+        // 点数相同，比较花色（大小：黑桃(0) > 红桃(1) > 梅花(2) > 方块(3)）
+        // 花色大小映射：0-黑桃(最大), 1-红桃, 2-梅花, 3-方块(最小)
         int suit1Value = getSuitValue(maxCard1.getSuit());
         int suit2Value = getSuitValue(maxCard2.getSuit());
         // suit值小的更大，返回：正数表示庄家大，负数表示玩家大
-        return suit1Value - suit2Value;
+        int suitCompare = suit1Value - suit2Value;
+        System.out.println(String.format("比较牌 - 点数相同，比较花色: 玩家最大牌(rank=%d, suit=%d, suitValue=%d) vs 庄家最大牌(rank=%d, suit=%d, suitValue=%d), 结果=%d", 
+            maxCard1.getRank(), maxCard1.getSuit(), suit1Value, maxCard2.getRank(), maxCard2.getSuit(), suit2Value, suitCompare));
+        return suitCompare;
     }
 
     /**
      * 获取花色的大小值（用于比较）
-     * 大小：黑桃(0) > 红桃(1) > 梅花(3) > 方块(2)
-     * @param suit 花色：0-黑桃，1-红桃，2-方块，3-梅花
+     * 大小：黑桃(0) > 红桃(1) > 梅花(2) > 方块(3)
+     * @param suit 花色：0-黑桃，1-红桃，2-梅花，3-方块
      * @return 花色大小值（越小越大）
      */
     private static int getSuitValue(int suit) {
-        // 映射：0-黑桃(0), 1-红桃(1), 2-方块(3), 3-梅花(2)
+        // 映射：0-黑桃(0), 1-红桃(1), 2-梅花(2), 3-方块(3)
         // 这样：0 < 1 < 2 < 3，对应：黑桃 > 红桃 > 梅花 > 方块
         switch (suit) {
             case 0: return 0; // 黑桃 - 最大
             case 1: return 1; // 红桃
-            case 3: return 2; // 梅花
-            case 2: return 3; // 方块 - 最小
+            case 2: return 2; // 梅花
+            case 3: return 3; // 方块 - 最小
             default: return 4; // 未知花色
         }
     }

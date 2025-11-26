@@ -7,12 +7,12 @@ import lombok.Getter;
  */
 @Getter
 public enum CardType {
-    WU_XIAO_NIU("五小牛", 5),
-    ZHA_DAN_NIU("炸弹牛", 4),
-    WU_HUA_NIU("五花牛", 4),
-    SHUN_ZI_NIU("顺子", 4),
-    NIU_NIU("牛牛", 3),
-    NIU_9("牛9", 2),
+    WU_XIAO_NIU("五小牛", 6),
+    ZHA_DAN_NIU("炸弹牛", 5),
+    WU_HUA_NIU("五花牛", 5),
+    SHUN_ZI_NIU("顺子", 5),
+    NIU_NIU("牛牛", 4),
+    NIU_9("牛9", 3),
     NIU_8("牛8", 2),
     NIU_7("牛7", 1),
     NIU_6("牛6", 1),

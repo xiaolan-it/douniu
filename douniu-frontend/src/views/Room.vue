@@ -258,25 +258,25 @@ const requiredCardTypes = ['无牛', '牛1', '牛2', '牛3', '牛4', '牛5', '�
 const cardTypes = [
   { 
     name: '五小牛', 
-    multiplier: 5,
+    multiplier: 6,
     description: '5张牌都小于5，且总和≤10',
     example: '例：AA223'
   },
   { 
     name: '炸弹牛', 
-    multiplier: 4,
+    multiplier: 5,
     description: '4张相同点数的牌',
     example: '例：AAAAK'
   },
   { 
     name: '五花牛', 
-    multiplier: 4,
+    multiplier: 5,
     description: '5张都是J、Q、K',
     example: '例：JJQQK'
   },
   { 
     name: '顺子', 
-    multiplier: 4,
+    multiplier: 5,
     description: '5张牌点数连续',
     example: '例：A2345'
   }
