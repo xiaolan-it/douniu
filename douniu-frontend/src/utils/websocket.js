@@ -64,7 +64,7 @@ const scheduleReconnect = (token, onConnect, onError) => {
   reconnectTimer = setTimeout(() => {
     console.log('尝试重新连接WebSocket...')
     connectWebSocket(token, onConnect, onError)
-  }, 5000)
+  }, 1000)
 }
 
 const startHeartbeat = () => {
@@ -76,7 +76,7 @@ const startHeartbeat = () => {
         body: JSON.stringify({ timestamp: Date.now() })
       })
     }
-  }, 30000) // 每30秒发送一次心跳
+  }, 5000) // 每5秒发送一次心跳
 }
 
 const stopHeartbeat = () => {
