@@ -40,6 +40,7 @@ public class UserService {
 
     /**
      * 用户登录
+     * 当 is-concurrent: false 时，新登录会自动踢掉旧登录的token
      */
     public User login(LoginRequest request) {
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
@@ -54,7 +55,14 @@ public class UserService {
             throw new RuntimeException("密码错误");
         }
 
-        // Sa-Token登录
+        // 检查是否已有登录（当 is-concurrent: false 时，StpUtil.login 会自动踢掉旧token）
+        // 但为了确保旧token被正确清理，我们可以先登出（如果已登录）
+        if (StpUtil.isLogin(user.getId())) {
+            // 如果用户已登录，先登出旧token（StpUtil.login 会自动处理，但这里显式处理更安全）
+            StpUtil.logout(user.getId());
+        }
+
+        // Sa-Token登录（当 is-concurrent: false 时，这会自动踢掉旧登录）
         StpUtil.login(user.getId());
         return user;
     }

@@ -39,7 +39,7 @@ sa-token:
   token-name: token
   timeout: 2592000  # token有效期：30天（秒）
   active-timeout: -1  # token活跃超时：-1表示不限制
-  is-concurrent: true  # 是否允许同一账号并发登录
+  is-concurrent: false  # 是否允许同一账号并发登录
   is-share: true  # 是否在多个服务间共享token
   token-style: uuid  # token风格：uuid
   is-log: false  # 是否打印日志

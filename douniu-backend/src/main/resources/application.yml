@@ -39,12 +39,13 @@ sa-token:
   token-name: token
   timeout: 2592000  # token有效期：30天（秒）
   active-timeout: -1  # token活跃超时：-1表示不限制
-  is-concurrent: true  # 是否允许同一账号并发登录
+  is-concurrent: false  # 是否允许同一账号并发登录：false表示单点登录，新登录会踢掉旧登录
   is-share: true  # 是否在多个服务间共享token
   token-style: uuid  # token风格：uuid
-  is-log: false  # 是否打印日志
+  is-log: true  # 是否打印日志
   # 注意：当引入了 sa-token-redis-jackson 依赖后，Sa-Token 会自动使用 Redis 存储 token
   # 确保 Redis 配置正确，token 就会持久化到 Redis，重启服务后不会失效
+  # is-concurrent: false 时，同一账号只能有一个有效token，新登录会自动踢掉旧token
 
 # 服务器配置
 server:

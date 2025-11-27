@@ -112,6 +112,9 @@ public class WebSocketMessageHandler {
 
             // 广播房间信息更新
             broadcastRoomUpdate(room.getId());
+            
+            // 检查是否可以开始游戏（如果所有在线玩家都已准备）
+            checkAndStartGameIfReady(room.getId());
 
             sendSuccess(userId, "加入房间成功", room);
         } catch (Exception e) {
@@ -226,8 +229,6 @@ public class WebSocketMessageHandler {
             // 添加到准备列表
             roomReadyPlayers.computeIfAbsent(roomId, k -> ConcurrentHashMap.newKeySet()).add(userId);
             
-            // 获取房间玩家列表（带在线状态）
-            List<RoomPlayer> players = roomService.getRoomPlayers(roomId, webSocketEventListener::isUserOnline);
             Set<Long> readySet = roomReadyPlayers.getOrDefault(roomId, new HashSet<>());
             int readyCount = readySet.size();
             
@@ -236,6 +237,31 @@ public class WebSocketMessageHandler {
             
             // 更新玩家准备状态并广播
             broadcastRoomUpdate(roomId);
+            
+            // 检查是否可以开始游戏
+            checkAndStartGameIfReady(roomId);
+            
+            sendSuccess(userId, "准备成功", null);
+        } catch (Exception e) {
+            log.error("准备失败", e);
+            if (userId != null) {
+                sendError(userId, e.getMessage());
+            }
+        }
+    }
+    
+    // 准备倒计时定时器：roomId -> Timer
+    private final Map<Long, java.util.Timer> roomReadyCountdownTimers = new ConcurrentHashMap<>();
+    
+    /**
+     * 检查是否可以开始游戏（如果所有在线玩家都已准备）
+     */
+    private void checkAndStartGameIfReady(Long roomId) {
+        try {
+            // 获取房间玩家列表（带在线状态）
+            List<RoomPlayer> players = roomService.getRoomPlayers(roomId, webSocketEventListener::isUserOnline);
+            Set<Long> readySet = roomReadyPlayers.getOrDefault(roomId, new HashSet<>());
+            int readyCount = readySet.size();
             
             // 获取在线玩家列表
             List<RoomPlayer> onlinePlayers = players.stream()
@@ -296,18 +322,10 @@ public class WebSocketMessageHandler {
             } else {
                 log.info("准备检查 - 条件不满足: 在线玩家数={}, 已准备数={}", onlinePlayerCount, readyCount);
             }
-            
-            sendSuccess(userId, "准备成功", null);
         } catch (Exception e) {
-            log.error("准备失败", e);
-            if (userId != null) {
-                sendError(userId, e.getMessage());
-            }
+            log.error("检查是否可以开始游戏失败 - 房间ID: {}", roomId, e);
         }
     }
-    
-    // 准备倒计时定时器：roomId -> Timer
-    private final Map<Long, java.util.Timer> roomReadyCountdownTimers = new ConcurrentHashMap<>();
     
     /**
      * 开始准备倒计时（10秒）
@@ -739,6 +757,45 @@ public class WebSocketMessageHandler {
         }
     }
 
+    /**
+     * 心跳消息处理
+     */
+    @MessageMapping("/heartbeat")
+    public void heartbeat(@Payload Map<String, Object> payload, org.springframework.messaging.Message<?> message) {
+        try {
+            // 从消息头中获取sessionId
+            StompHeaderAccessor headerAccessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+            String sessionId = headerAccessor != null ? headerAccessor.getSessionId() : null;
+            
+            // 从sessionUserMap中获取userId（如果sessionId存在）
+            Long userId = null;
+            if (sessionId != null) {
+                userId = webSocketEventListener.getUserIdBySessionId(sessionId);
+            }
+            
+            // 如果无法从session获取userId，尝试从payload获取（兼容旧版本）
+            if (userId == null) {
+                try {
+                    userId = getUserIdFromMessage(payload);
+                } catch (Exception e) {
+                    log.debug("心跳消息中无法获取userId，sessionId: {}", sessionId);
+                }
+            }
+            
+            // 心跳消息只需要确认连接仍然活跃
+            // 不需要做任何操作，只要收到消息就说明连接正常
+            if (userId != null) {
+                log.debug("收到心跳消息 - 用户ID: {}, sessionId: {}", userId, sessionId);
+                sendSuccess(userId, "心跳成功", null);
+            } else {
+                log.debug("收到心跳消息但无法确定用户 - sessionId: {}", sessionId);
+            }
+        } catch (Exception e) {
+            // 心跳消息失败不影响连接，只记录日志
+            log.debug("心跳消息处理失败", e);
+        }
+    }
+    
     /**
      * 提前结算
      */

@@ -264,35 +264,62 @@ public class CardTypeCalculator {
 
     /**
      * 比较两副牌的大小（当牌型相同时使用）
-     * 规则：比较最大的一张牌，先比点数，点数相同再比花色（黑桃>红桃>梅花>方块）
-     * 如果最大牌的点数相同，则按最大牌的花色比较大小
+     * 规则：按从大到小的顺序比较每张牌，先比点数，点数相同再比花色（黑桃>红桃>梅花>方块）
+     * 如果最大牌相同，则比较第二大牌，以此类推
      * @param cards1 牌1（玩家）
      * @param cards2 牌2（庄家）
      * @return 正数表示cards2（庄家）大，负数表示cards1（玩家）大，0表示相等
      */
     private static int compareCards(List<Card> cards1, List<Card> cards2) {
-        // 找到每副牌中最大的一张牌（先比点数，再比花色）
-        Card maxCard1 = findMaxCard(cards1);
-        Card maxCard2 = findMaxCard(cards2);
-
-        // 先比较点数（rank）
-        if (maxCard1.getRank() != maxCard2.getRank()) {
-            // 点数大的更大，返回：正数表示庄家大，负数表示玩家大
-            int rankCompare = maxCard2.getRank() - maxCard1.getRank();
-            System.out.println(String.format("比较牌 - 点数不同: 玩家最大牌(rank=%d, suit=%d) vs 庄家最大牌(rank=%d, suit=%d), 结果=%d", 
-                maxCard1.getRank(), maxCard1.getSuit(), maxCard2.getRank(), maxCard2.getSuit(), rankCompare));
-            return rankCompare;
+        // 对两副牌进行排序（从大到小）
+        List<Card> sorted1 = new ArrayList<>(cards1);
+        List<Card> sorted2 = new ArrayList<>(cards2);
+        
+        sorted1.sort((c1, c2) -> {
+            // 先比较点数
+            if (c1.getRank() != c2.getRank()) {
+                return c2.getRank() - c1.getRank(); // 点数大的在前
+            }
+            // 点数相同，比较花色（花色值小的在前）
+            return getSuitValue(c1.getSuit()) - getSuitValue(c2.getSuit());
+        });
+        
+        sorted2.sort((c1, c2) -> {
+            // 先比较点数
+            if (c1.getRank() != c2.getRank()) {
+                return c2.getRank() - c1.getRank(); // 点数大的在前
+            }
+            // 点数相同，比较花色（花色值小的在前）
+            return getSuitValue(c1.getSuit()) - getSuitValue(c2.getSuit());
+        });
+        
+        // 按顺序比较每张牌
+        for (int i = 0; i < sorted1.size(); i++) {
+            Card card1 = sorted1.get(i);
+            Card card2 = sorted2.get(i);
+            
+            // 先比较点数
+            if (card1.getRank() != card2.getRank()) {
+                int rankCompare = card2.getRank() - card1.getRank();
+                System.out.println(String.format("比较牌[%d] - 点数不同: 玩家(rank=%d, suit=%d) vs 庄家(rank=%d, suit=%d), 结果=%d", 
+                    i, card1.getRank(), card1.getSuit(), card2.getRank(), card2.getSuit(), rankCompare));
+                return rankCompare;
+            }
+            
+            // 点数相同，比较花色
+            int suit1Value = getSuitValue(card1.getSuit());
+            int suit2Value = getSuitValue(card2.getSuit());
+            if (suit1Value != suit2Value) {
+                int suitCompare = suit1Value - suit2Value;
+                System.out.println(String.format("比较牌[%d] - 点数相同，比较花色: 玩家(rank=%d, suit=%d, suitValue=%d) vs 庄家(rank=%d, suit=%d, suitValue=%d), 结果=%d", 
+                    i, card1.getRank(), card1.getSuit(), suit1Value, card2.getRank(), card2.getSuit(), suit2Value, suitCompare));
+                return suitCompare;
+            }
         }
-
-        // 点数相同，比较花色（大小：黑桃(0) > 红桃(1) > 梅花(2) > 方块(3)）
-        // 花色大小映射：0-黑桃(最大), 1-红桃, 2-梅花, 3-方块(最小)
-        int suit1Value = getSuitValue(maxCard1.getSuit());
-        int suit2Value = getSuitValue(maxCard2.getSuit());
-        // suit值小的更大，返回：正数表示庄家大，负数表示玩家大
-        int suitCompare = suit1Value - suit2Value;
-        System.out.println(String.format("比较牌 - 点数相同，比较花色: 玩家最大牌(rank=%d, suit=%d, suitValue=%d) vs 庄家最大牌(rank=%d, suit=%d, suitValue=%d), 结果=%d", 
-            maxCard1.getRank(), maxCard1.getSuit(), suit1Value, maxCard2.getRank(), maxCard2.getSuit(), suit2Value, suitCompare));
-        return suitCompare;
+        
+        // 所有牌都相同
+        System.out.println("比较牌 - 所有牌都相同，返回0");
+        return 0;
     }
 
     /**
@@ -313,26 +340,6 @@ public class CardTypeCalculator {
         }
     }
 
-    /**
-     * 找到一副牌中最大的一张牌
-     * 规则：先比点数，点数相同再比花色（黑桃>红桃>梅花>方块）
-     */
-    private static Card findMaxCard(List<Card> cards) {
-        Card maxCard = cards.get(0);
-        for (int i = 1; i < cards.size(); i++) {
-            Card card = cards.get(i);
-            // 先比较点数
-            if (card.getRank() > maxCard.getRank()) {
-                maxCard = card;
-            } else if (card.getRank() == maxCard.getRank()) {
-                // 点数相同，比较花色（使用花色大小值，值越小越大）
-                if (getSuitValue(card.getSuit()) < getSuitValue(maxCard.getSuit())) {
-                    maxCard = card;
-                }
-            }
-        }
-        return maxCard;
-    }
 
     /**
      * 获取牌型等级

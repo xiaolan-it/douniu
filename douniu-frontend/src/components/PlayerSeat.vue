@@ -22,10 +22,10 @@
       </div>
       
       <!-- 在线/离线状态标识 -->
-      <!-- <div class="online-status-badge" :class="{ 'online': isOnline, 'offline': !isOnline }">
+      <div class="online-status-badge" :class="{ 'online': isOnline, 'offline': !isOnline }">
         <span class="status-dot"></span>
-        <span class="status-text">{{ isOnline ? '在线' : '离线' }}</span>
-      </div> -->
+        <!-- <span class="status-text">{{ isOnline ? '在线' : '离线' }}</span> -->
+      </div>
       
       <!-- 玩家昵称 -->
       <div class="player-name">

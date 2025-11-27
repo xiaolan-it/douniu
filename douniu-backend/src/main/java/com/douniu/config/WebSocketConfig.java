@@ -23,9 +23,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         // 注册WebSocket端点，允许跨域
+        // SockJS会自动处理info请求（没有Upgrade头），这是正常的
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*")
-                .withSockJS();
+                .withSockJS()
+                .setHeartbeatTime(25000) // 心跳间隔25秒
+                .setDisconnectDelay(5000); // 断开延迟5秒
     }
 }
 
